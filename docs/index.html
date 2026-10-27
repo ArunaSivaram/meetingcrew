@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MeetingCrew — Meeting notes → GitHub issues → emails, with AI agents</title>
+<meta name="description" content="A learning project: three CrewAI agents turn meeting notes into GitHub issues (via Model Context Protocol) and draft per-owner follow-up emails." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='28'%3E%F0%9F%9A%A2%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-elev: #fafafa;
+    --fg: #0a0a0a;
+    --fg-muted: #525252;
+    --fg-subtle: #a3a3a3;
+    --border: #e5e5e5;
+    --accent: #0a0a0a;
+    --accent-hover: #333;
+    --code-bg: #f5f5f5;
+    --code-fg: #0a0a0a;
+    --mono: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0a;
+      --bg-elev: #141414;
+      --fg: #fafafa;
+      --fg-muted: #a3a3a3;
+      --fg-subtle: #525252;
+      --border: #262626;
+      --accent: #fafafa;
+      --accent-hover: #d4d4d4;
+      --code-bg: #141414;
+      --code-fg: #fafafa;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  nav .brand {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.01em;
+  }
+  nav .brand::before {
+    content: '▲ ';
+    color: var(--fg-subtle);
+  }
+  nav a {
+    color: var(--fg-muted);
+    text-decoration: none;
+    font-size: 14px;
+    margin-left: 20px;
+    transition: color 0.15s;
+  }
+  nav a:hover { color: var(--fg); }
+
+  .hero {
+    padding: 96px 0 72px;
+    border-bottom: 1px solid var(--border);
+  }
+  .hero .pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-muted);
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    margin: 0 0 20px;
+    max-width: 20ch;
+  }
+  .hero p.lede {
+    font-size: 18px;
+    color: var(--fg-muted);
+    max-width: 60ch;
+    margin: 0 0 32px;
+  }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    transition: all 0.15s;
+    font-family: var(--sans);
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary {
+    background: transparent;
+    color: var(--fg);
+  }
+  .btn-secondary:hover { background: var(--bg-elev); }
+
+  section {
+    padding: 72px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section h2 {
+    font-size: 28px;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+  }
+  section h2 .num {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--fg-subtle);
+    margin-right: 12px;
+    font-weight: 400;
+  }
+  section p.section-lede {
+    color: var(--fg-muted);
+    max-width: 60ch;
+    margin: 0 0 40px;
+  }
+
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 24px;
+  }
+  .feature {
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-elev);
+  }
+  .feature .icon {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-subtle);
+    margin-bottom: 12px;
+  }
+  .feature h3 {
+    font-size: 16px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .feature p {
+    color: var(--fg-muted);
+    font-size: 14px;
+    margin: 0;
+  }
+
+  .diagram {
+    padding: 32px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-elev);
+    overflow-x: auto;
+  }
+  .diagram .mermaid { text-align: center; min-width: 600px; }
+
+  .agents {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .agent {
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .agent .role {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-subtle);
+    margin-bottom: 8px;
+  }
+  .agent h4 { margin: 0 0 8px; font-size: 15px; }
+  .agent p { color: var(--fg-muted); font-size: 14px; margin: 0; }
+  .agent .tools {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 2px 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--code-bg);
+    border-radius: 4px;
+    color: var(--fg-muted);
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 0;
+  }
+  code { font-family: var(--mono); font-size: 0.92em; }
+  :not(pre) > code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    border: 1px solid var(--border);
+  }
+
+  .stack-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 16px 24px;
+    font-size: 14px;
+  }
+  .stack-grid > div:nth-child(odd) {
+    font-family: var(--mono);
+    color: var(--fg-subtle);
+    font-size: 12px;
+    padding-top: 2px;
+  }
+  .stack-grid > div:nth-child(even) {
+    color: var(--fg-muted);
+    border-bottom: 1px dashed var(--border);
+    padding-bottom: 12px;
+  }
+  .stack-grid > div:nth-child(even) strong { color: var(--fg); font-weight: 500; }
+
+  .caveat {
+    padding: 16px 20px;
+    border-left: 3px solid var(--fg-subtle);
+    background: var(--bg-elev);
+    margin: 12px 0;
+    font-size: 14px;
+    color: var(--fg-muted);
+    border-radius: 0 8px 8px 0;
+  }
+  .caveat strong { color: var(--fg); }
+
+  footer {
+    padding: 48px 0;
+    text-align: center;
+    color: var(--fg-subtle);
+    font-size: 13px;
+  }
+  footer a {
+    color: var(--fg-muted);
+    margin: 0 8px;
+  }
+
+  @media (max-width: 640px) {
+    .hero { padding: 56px 0 48px; }
+    section { padding: 48px 0; }
+    .stack-grid { grid-template-columns: 1fr; gap: 4px 0; }
+    .stack-grid > div:nth-child(even) { margin-bottom: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <nav>
+    <div class="brand">meetingcrew</div>
+    <div>
+      <a href="#how">How it works</a>
+      <a href="#stack">Stack</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="https://github.com/ArunaSivaram/meetingcrew">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <span class="pill">learning project · CrewAI + MCP</span>
+    <h1>Meeting notes in. Shipped tickets out.</h1>
+    <p class="lede">
+      Three AI agents read your meeting notes, open GitHub issues through the
+      Model Context Protocol, and draft follow-up emails to each owner —
+      wired up as a Django app you can run locally in minutes.
+    </p>
+    <div class="cta-row">
+      <a href="https://github.com/ArunaSivaram/meetingcrew" class="btn btn-primary">View on GitHub →</a>
+      <a href="#quickstart" class="btn btn-secondary">Quickstart</a>
+    </div>
+  </header>
+
+  <section id="what">
+    <h2><span class="num">01</span>What it does</h2>
+    <p class="section-lede">
+      Paste the notes from your weekly sync. The crew does the next 20 minutes
+      of busywork for you.
+    </p>
+    <div class="features">
+      <div class="feature">
+        <div class="icon">// extract</div>
+        <h3>Parses action items</h3>
+        <p>Finds every commitment and matches owners strictly against your roster — no hallucinated people.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">// open</div>
+        <h3>Opens GitHub issues</h3>
+        <p>One issue per task in the repo you choose, assigned to the right person, through the official GitHub MCP server.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">// draft</div>
+        <h3>Drafts follow-up emails</h3>
+        <p>One short email per owner listing only their tasks with issue links, plus a 3-line team summary.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <h2><span class="num">02</span>How it works</h2>
+    <p class="section-lede">
+      A sequential CrewAI pipeline. Each agent passes structured Pydantic
+      output to the next. The middle agent gets exactly one tool.
+    </p>
+
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    Notes[Meeting notes] --> Analyst
+    Roster[Roster<br/>Django Participants] --> Analyst
+
+    subgraph Crew[CrewAI sequential crew]
+        Analyst[Notes Analyst<br/>no tools]
+        IssueCreator[Issue Creator<br/>only: issue_write]
+        CommsWriter[Comms Writer<br/>no tools]
+    end
+
+    Analyst -->|ActionItemList| IssueCreator
+    Analyst -->|ActionItemList| CommsWriter
+    IssueCreator -->|MCP stdio| MCPServer[GitHub MCP server]
+    MCPServer -->|REST| GH[(GitHub)]
+    GH -->|numbers + URLs| CommsWriter
+    CommsWriter --> Output[Per-owner emails<br/>+ 3-line summary]
+      </pre>
+    </div>
+
+    <div class="agents">
+      <div class="agent">
+        <div class="role">Agent 01</div>
+        <h4>Notes Analyst</h4>
+        <p>Extracts action items. Matches owners against the roster. Leaves ambiguous ones unassigned rather than guess.</p>
+        <span class="tools">tools: none</span>
+      </div>
+      <div class="agent">
+        <div class="role">Agent 02</div>
+        <h4>Issue Creator</h4>
+        <p>Opens one GitHub issue per action item. Given <em>only</em> the issue-creation tool — principle of least privilege.</p>
+        <span class="tools">tools: issue_write</span>
+      </div>
+      <div class="agent">
+        <div class="role">Agent 03</div>
+        <h4>Comms Writer</h4>
+        <p>Writes one email per owner with issue links, plus a 3-line meeting recap for a team channel.</p>
+        <span class="tools">tools: none</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="stack">
+    <h2><span class="num">03</span>Stack</h2>
+    <p class="section-lede">
+      Deliberately small and inspectable — every piece is swappable later.
+    </p>
+    <div class="stack-grid">
+      <div>web</div>
+      <div><strong>Django 6.1</strong> — admin, ORM, templating. One-stop frontend/backend.</div>
+      <div>agents</div>
+      <div><strong>CrewAI</strong> — sequential multi-agent pipeline with Pydantic-structured outputs.</div>
+      <div>tool bridge</div>
+      <div><strong>crewai_tools.MCPServerAdapter</strong> — wraps MCP tools as CrewAI <code>BaseTool</code>s.</div>
+      <div>external tools</div>
+      <div><strong>GitHub MCP server</strong> — the official Go binary; stdio transport.</div>
+      <div>llm</div>
+      <div><strong>OpenAI gpt-4o-mini</strong> — fast, cheap, good at structured outputs.</div>
+      <div>data</div>
+      <div><strong>SQLite</strong> — zero infra for the quickstart.</div>
+    </div>
+  </section>
+
+  <section id="quickstart">
+    <h2><span class="num">04</span>Quickstart</h2>
+    <p class="section-lede">
+      Clone, install, point at a sandbox repo, run. The whole loop in &lt; 10
+      minutes once you have Python 3.13 and Go.
+    </p>
+    <pre><code>git clone https://github.com/ArunaSivaram/meetingcrew
+cd meetingcrew
+python3.13 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Build the GitHub MCP server binary
+git clone https://github.com/github/github-mcp-server
+(cd github-mcp-server && go build -o github-mcp-server ./cmd/github-mcp-server)
+
+# Configure .env with GITHUB_PERSONAL_ACCESS_TOKEN, GITHUB_MCP_BINARY,
+# OPENAI_API_KEY, OPENAI_MODEL_NAME
+
+python manage.py migrate
+python manage.py createsuperuser    # for /admin
+python manage.py runserver
+
+# Try the crew end-to-end
+python scripts/test_crew.py</code></pre>
+  </section>
+
+  <section id="caveats">
+    <h2><span class="num">05</span>Honest caveats</h2>
+    <p class="section-lede">
+      This was built to learn, not to ship. A few things to know before
+      pointing it at a real repo.
+    </p>
+    <div class="caveat">
+      <strong>PAT permissions:</strong> Fine-grained PATs may create issues
+      but silently drop <code>assignees</code>. Give the token explicit
+      <em>Issues: Read &amp; write</em>, or use a classic PAT with <code>repo</code>.
+    </div>
+    <div class="caveat">
+      <strong>Agent hallucinations:</strong> If a tool keeps failing, the
+      LLM may fabricate a successful response. Verify side-effects (actual
+      issues on GitHub) against the external system — never trust the
+      agent's own claim.
+    </div>
+    <div class="caveat">
+      <strong>Cost &amp; blast radius:</strong> Running the crew calls
+      OpenAI and creates real GitHub issues. Point it at a sandbox repo.
+    </div>
+  </section>
+
+  <footer>
+    Built as a learning exercise ·
+    <a href="https://github.com/ArunaSivaram/meetingcrew">Repo</a> ·
+    <a href="https://github.com/crewAIInc/crewAI">CrewAI</a> ·
+    <a href="https://modelcontextprotocol.io">MCP</a>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default',
+    themeVariables: {
+      fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, system-ui, sans-serif'
+    }
+  });
+</script>
+
+</body>
+</html>
