@@ -1,0 +1,18 @@
+# Secrets and local state
+.env
+.venv/
+db.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+
+# OS cruft
+.DS_Store
+
+# Vendored external repo — cloned, not ours
+github-mcp-server/
+
+# Scratch
+hello.go
+/tmp/
